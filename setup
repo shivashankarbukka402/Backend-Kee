@@ -1,0 +1,59 @@
+# Running keemeds_commerce (Frappe/ERPNext backend) with Docker Compose
+
+## 1. File placement
+Put `Dockerfile`, `docker-compose.yml`, `.env`, and `.dockerignore` at the
+**root** of the `Enterprise-Healthcare-Commerce-Platform-B` repo (same level
+as `keemeds_commerce/`, `pyproject.toml`, `license.txt`).
+
+## 2. Configure secrets
+Edit `.env` and set real values for:
+- `SITE_NAME` — your site's domain/hostname (e.g. `commerce.keemeds.com` or `localhost` for local testing)
+- `ADMIN_PASSWORD` — Frappe admin login password
+- `DB_ROOT_PASSWORD` — MariaDB root password
+
+Do **not** commit `.env` with real production secrets — add it to `.gitignore`.
+
+## 3. Build and start everything
+```bash
+docker compose build
+docker compose up -d
+```
+
+This will, in order:
+1. Start `mariadb`, `redis-cache`, `redis-queue`
+2. Run `configurator` (writes DB/Redis connection config) — exits when done
+3. Run `create-site` (creates the site, installs `erpnext` + `keemeds_commerce`) — exits when done
+4. Start `backend`, `websocket`, `scheduler`, `queue-worker`, and `frontend` (nginx) as long-running services
+
+## 4. Watch first-time setup logs
+Site creation can take a few minutes the first time:
+```bash
+docker compose logs -f create-site
+```
+
+## 5. Access the app
+Once `create-site` has completed successfully:
+```
+http://localhost:8080
+```
+Login with:
+- Username: `Administrator`
+- Password: whatever you set as `ADMIN_PASSWORD`
+
+## 6. Common operations
+```bash
+docker compose ps                     # see status of all services
+docker compose logs -f backend        # tail backend logs
+docker compose exec backend bash      # shell into the backend container
+docker compose down                   # stop everything (keeps volumes/data)
+docker compose down -v                # stop AND wipe all data (careful!)
+```
+
+## Notes / production hardening
+- This compose file is a solid starting point, but for real production traffic
+  you should also add: TLS termination (e.g. Traefik or an external Nginx/ALB
+  in front of `frontend`), automated MariaDB backups, log shipping, and
+  resource limits (`mem_limit`, `cpus`) per service.
+- The official `frappe_docker` project (github.com/frappe/frappe_docker) is
+  the upstream reference this setup is based on — worth consulting if you
+  hit edge cases specific to Frappe versioning or multi-site setups.

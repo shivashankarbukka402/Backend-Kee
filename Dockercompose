@@ -1,0 +1,166 @@
+version: "3.8"
+
+x-backend-image: &backend-image
+  image: keemeds-commerce:latest
+  build:
+    context: .
+    dockerfile: Dockerfile
+
+x-backend-env: &backend-env
+  environment:
+    MARIADB_HOST: mariadb
+    DB_HOST: mariadb
+    DB_PORT: "3306"
+    REDIS_CACHE: redis-cache:6379
+    REDIS_QUEUE: redis-queue:6379
+    REDIS_SOCKETIO: redis-queue:6379
+    SOCKETIO_PORT: "9000"
+
+services:
+  # ---------------------------------------------------------------------
+  # Databases / caches
+  # ---------------------------------------------------------------------
+  mariadb:
+    image: mariadb:10.6
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compat
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-changeit}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DB_ROOT_PASSWORD:-changeit}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis-cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-cache-data:/data
+
+  redis-queue:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-queue-data:/data
+
+  # ---------------------------------------------------------------------
+  # One-off job: writes common_site_config.json with DB/Redis connection info
+  # ---------------------------------------------------------------------
+  configurator:
+    <<: [*backend-image]
+    <<: [*backend-env]
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        bench set-config -g db_host $$DB_HOST &&
+        bench set-config -gp db_port $$DB_PORT &&
+        bench set-config -g redis_cache "redis://$$REDIS_CACHE" &&
+        bench set-config -g redis_queue "redis://$$REDIS_QUEUE" &&
+        bench set-config -g redis_socketio "redis://$$REDIS_SOCKETIO" &&
+        bench set-config -gp socketio_port $$SOCKETIO_PORT
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------
+  # One-off job: creates the site + installs the app (only needed once)
+  # ---------------------------------------------------------------------
+  create-site:
+    <<: [*backend-image]
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        bench new-site ${SITE_NAME:-keemeds.local}
+        --mariadb-root-password ${DB_ROOT_PASSWORD:-changeit}
+        --admin-password ${ADMIN_PASSWORD:-admin}
+        --install-app keemeds_commerce
+        --install-app erpnext
+        --no-mariadb-socket || true
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+
+  # ---------------------------------------------------------------------
+  # Application services
+  # ---------------------------------------------------------------------
+  backend:
+    <<: [*backend-image]
+    <<: [*backend-env]
+    restart: unless-stopped
+    command: ["bench", "start", "--no-dev"]
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    depends_on:
+      create-site:
+        condition: service_completed_successfully
+
+  websocket:
+    <<: [*backend-image]
+    <<: [*backend-env]
+    restart: unless-stopped
+    command: ["node", "apps/frappe/socketio.js"]
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    depends_on:
+      - backend
+
+  scheduler:
+    <<: [*backend-image]
+    <<: [*backend-env]
+    restart: unless-stopped
+    command: ["bench", "schedule"]
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    depends_on:
+      - backend
+
+  queue-worker:
+    <<: [*backend-image]
+    <<: [*backend-env]
+    restart: unless-stopped
+    command: ["bench", "worker"]
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    depends_on:
+      - backend
+
+  # ---------------------------------------------------------------------
+  # Reverse proxy / entry point
+  # ---------------------------------------------------------------------
+  frontend:
+    image: frappe/frappe-nginx:v15
+    restart: unless-stopped
+    environment:
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      FRAPPE_SITE_NAME_HEADER: ${SITE_NAME:-keemeds.local}
+    ports:
+      - "8080:8080"
+    volumes:
+      - sites:/usr/share/nginx/html/sites:ro
+      - assets:/usr/share/nginx/html/assets:ro
+    depends_on:
+      - backend
+      - websocket
+
+volumes:
+  mariadb-data:
+  redis-cache-data:
+  redis-queue-data:
+  sites:
+  assets:

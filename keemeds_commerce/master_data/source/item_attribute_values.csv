@@ -1,0 +1,31 @@
+attribute,attribute_value,abbr
+Dosage Form,Tablet,TAB
+Dosage Form,Capsule,CAP
+Dosage Form,Syrup,SYP
+Dosage Form,Drops,DROP
+Dosage Form,Injection,INJ
+Dosage Form,Cream,CRM
+Dosage Form,Ointment,OINT
+Dosage Form,Lotion,LOT
+Dosage Form,Spray,SPR
+Dosage Form,Gel,GEL
+Dosage Form,Powder,PWD
+Dosage Form,Infusion,INF
+Dosage Form,Suspension,SUSP
+Dosage Form,Inhaler,INH
+Strength,650 mg,650MG
+Strength,500 mg,500MG
+Strength,250 mg,250MG
+Strength,120 mg/5ml,1205
+Strength,1 g,1G
+Strength,100 mg/ml,100ML
+Strength,40 IU/ml,40IU
+Strength,100 IU/ml,100IU
+Salt Composition,Paracetamol,PCM
+Salt Composition,Amoxicillin,AMOX
+Salt Composition,Ciprofloxacin,CIPRO
+Salt Composition,Azithromycin,AZI
+Salt Composition,Cetirizine,CET
+Salt Composition,Pantoprazole,PANTO
+Salt Composition,Metformin,MET
+Country of Origin,India,IND
